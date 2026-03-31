@@ -1,0 +1,31 @@
+[Unit]
+Description=PQPM Process Manager Daemon
+Documentation=https://github.com/pqpm/pqpm
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/pqpmd
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pqpmd
+
+# Runtime directories (systemd creates these automatically)
+RuntimeDirectory=pqpm
+LogsDirectory=pqpm
+
+# Security hardening
+ProtectSystem=strict
+ReadWritePaths=/var/run/pqpm /var/log/pqpm
+ProtectHome=read-only
+NoNewPrivileges=false
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

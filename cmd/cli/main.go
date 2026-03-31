@@ -8,6 +8,7 @@ import (
 
 	"github.com/pqpm/pqpm/internal/socket"
 	"github.com/pqpm/pqpm/internal/types"
+	"github.com/pqpm/pqpm/internal/version"
 )
 
 func main() {
@@ -22,6 +23,7 @@ func main() {
 	rootCmd.AddCommand(stopCmd())
 	rootCmd.AddCommand(restartCmd())
 	rootCmd.AddCommand(logCmd())
+	rootCmd.AddCommand(versionCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -128,6 +130,16 @@ func restartCmd() *cobra.Command {
 
 			fmt.Println(resp.Message)
 			return nil
+		},
+	}
+}
+
+func versionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the version of pqpm",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println(version.String())
 		},
 	}
 }

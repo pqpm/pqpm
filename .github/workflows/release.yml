@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build linux/amd64
+        env:
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir -p dist
+          LDFLAGS="-s -w -X github.com/pqpm/pqpm/internal/version.Version=${{ steps.version.outputs.VERSION }} -X github.com/pqpm/pqpm/internal/version.Commit=${{ github.sha }} -X github.com/pqpm/pqpm/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build -trimpath -ldflags "$LDFLAGS" -o dist/pqpmd ./cmd/daemon
+          go build -trimpath -ldflags "$LDFLAGS" -o dist/pqpm ./cmd/cli
+          cd dist && tar czf pqpm-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz pqpmd pqpm
+          rm -f pqpmd pqpm
+
+      - name: Build linux/arm64
+        env:
+          GOOS: linux
+          GOARCH: arm64
+        run: |
+          LDFLAGS="-s -w -X github.com/pqpm/pqpm/internal/version.Version=${{ steps.version.outputs.VERSION }} -X github.com/pqpm/pqpm/internal/version.Commit=${{ github.sha }} -X github.com/pqpm/pqpm/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build -trimpath -ldflags "$LDFLAGS" -o dist/pqpmd ./cmd/daemon
+          go build -trimpath -ldflags "$LDFLAGS" -o dist/pqpm ./cmd/cli
+          cd dist && tar czf pqpm-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz pqpmd pqpm
+          rm -f pqpmd pqpm
+
+      - name: Generate checksums
+        run: cd dist && sha256sum *.tar.gz > checksums.txt
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            echo "CHANGELOG=Initial release" >> "$GITHUB_OUTPUT"
+          else
+            CHANGES=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD)
+            # Write multiline output
+            {
+              echo "CHANGELOG<<EOF"
+              echo "$CHANGES"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PQPM ${{ steps.version.outputs.VERSION }}
+          body: |
+            ## PQPM ${{ steps.version.outputs.VERSION }}
+
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ### Installation
+
+            ```bash
+            # Download (replace linux-amd64 with your arch)
+            curl -LO https://github.com/pqpm/pqpm/releases/download/${{ steps.version.outputs.VERSION }}/pqpm-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz
+
+            # Verify checksum
+            sha256sum -c checksums.txt
+
+            # Extract and install
+            tar xzf pqpm-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz
+            sudo install -m 0755 pqpmd /usr/local/bin/
+            sudo install -m 0755 pqpm /usr/local/bin/
+            ```
+
+            Or use the install script:
+            ```bash
+            curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install.sh | sudo bash
+            ```
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
+          draft: false
+          prerelease: false
