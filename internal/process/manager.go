@@ -161,6 +161,14 @@ func (m *Manager) spawnProcess(name string, cfg types.ServiceConfig, uid, gid ui
 
 	cmd := exec.Command(parts[0], parts[1:]...)
 
+	// Pass environment variables if specified
+	if len(cfg.Env) > 0 {
+		cmd.Env = os.Environ()
+		for k, v := range cfg.Env {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+
 	// Drop privileges to the user's UID/GID
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{

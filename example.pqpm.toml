@@ -18,6 +18,7 @@ restart = "on-failure"
 max_memory = "1GB"
 cpu_limit = "50%"
 working_dir = "/home/user/api"
+env = { NODE_ENV = "production", PORT = "8080" }
 
 [service.python-bot]
 command = "/usr/bin/python3 /home/user/bots/discord_bot.py"

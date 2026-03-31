@@ -2,12 +2,13 @@ package types
 
 // ServiceConfig represents a single service definition from the user's .pqpm.toml
 type ServiceConfig struct {
-	Command    string `toml:"command"`
-	Restart    string `toml:"restart"`     // "always", "on-failure", "never"
-	MaxMemory  string `toml:"max_memory"`  // e.g. "512MB"
-	CPULimit   string `toml:"cpu_limit"`   // e.g. "20%"
-	WorkingDir string `toml:"working_dir"` // optional working directory
-	LogFile    string `toml:"log_file"`    // optional log file path
+	Command    string            `toml:"command"`
+	Restart    string            `toml:"restart"`     // "always", "on-failure", "never"
+	MaxMemory  string            `toml:"max_memory"`  // e.g. "512MB"
+	CPULimit   string            `toml:"cpu_limit"`   // e.g. "20%"
+	WorkingDir string            `toml:"working_dir"` // optional working directory
+	LogFile    string            `toml:"log_file"`    // optional log file path
+	Env        map[string]string `toml:"env"`         // optional environment variables
 }
 
 // UserConfig represents the full .pqpm.toml file

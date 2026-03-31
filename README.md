@@ -140,6 +140,7 @@ restart = "on-failure"
 max_memory = "1GB"
 cpu_limit = "50%"
 working_dir = "/home/user/api"
+env = { NODE_ENV = "production", PORT = "8080" }
 ```
 
 **3. Start a service:**
@@ -177,6 +178,7 @@ Each service is defined as a `[service.<name>]` block in `~/.pqpm.toml`:
 | `cpu_limit` | ❌ | — | CPU limit as percentage (e.g. `"20%"`) |
 | `working_dir` | ❌ | — | Working directory for the process |
 | `log_file` | ❌ | — | Custom log file path |
+| `env` | ❌ | `{}` | Environment variables as a map (e.g. `{ NODE_ENV = "production" }`) |
 
 ## Security & Safety
 
