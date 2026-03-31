@@ -38,7 +38,7 @@ Unlike PM2, which focuses on Node.js, PQPM is language-agnostic. Whether it's a 
 Bash
 
 # Clone the repository
-git clone https://github.com/your-username/pqpm.git
+git clone https://github.com/pqpm/pqpm.git
 
 # Build the daemon and CLI
 go build -o pqpmd ./cmd/daemon
