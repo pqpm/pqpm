@@ -59,13 +59,13 @@ func (m *Manager) Start(name string, cfg types.ServiceConfig, uid, gid uint32) e
 
 	// Persist the new state
 	if err := m.Persist(); err != nil {
-		logger.Log.Warnw("Failed to persist state", "error", err)
+		logger.Log.Warn("Failed to persist state", "error", err)
 	}
 
 	// Start monitoring goroutine for auto-restart
 	go m.monitor(key, name, cfg, uid, gid)
 
-	logger.Log.Infow("Process started",
+	logger.Log.Info("Process started",
 		"service", name,
 		"pid", proc.Info.PID,
 		"uid", uid,
@@ -92,7 +92,7 @@ func (m *Manager) Stop(name string, uid uint32) error {
 
 	// Persist the new state (after removing the process from active tracking)
 	if err := m.Persist(); err != nil {
-		logger.Log.Warnw("Failed to persist state", "error", err)
+		logger.Log.Warn("Failed to persist state", "error", err)
 	}
 
 	return nil
@@ -120,8 +120,16 @@ func (m *Manager) Status(uid uint32) []types.ProcessInfo {
 			info := proc.Info
 			if proc.Stopped || proc.Cmd.ProcessState != nil {
 				info.Status = "stopped"
+				info.MemoryUsage = "0B"
+				info.CPUUsage = "0us"
 			} else {
 				info.Status = "running"
+				// Get real-time metrics from cgroup
+				mem, cpu, _ := cgroup.GetMetrics(proc.Info.Name)
+				info.MemoryUsage = mem
+				info.CPUUsage = cpu
+				// Calculate uptime
+				// (Simplified: would need a start time field in ProcessInfo)
 			}
 			result = append(result, info)
 		}
@@ -136,7 +144,7 @@ func (m *Manager) StopAll() {
 
 	for key, proc := range m.processes {
 		if err := m.stopProcess(key, proc); err != nil {
-			logger.Log.Warnw("Failed to stop process during shutdown",
+			logger.Log.Warn("Failed to stop process during shutdown",
 				"service", proc.Info.Name,
 				"error", err,
 			)
@@ -169,7 +177,7 @@ func (m *Manager) spawnProcess(name string, cfg types.ServiceConfig, uid, gid ui
 	// Set up log output
 	logFile, err := setupLogFile(name, uid)
 	if err != nil {
-		logger.Log.Warnw("Failed to set up log file, using /dev/null",
+		logger.Log.Warn("Failed to set up log file, using /dev/null",
 			"service", name,
 			"error", err,
 		)
@@ -187,7 +195,7 @@ func (m *Manager) spawnProcess(name string, cfg types.ServiceConfig, uid, gid ui
 	// Apply cgroup resource limits
 	if cfg.MaxMemory != "" || cfg.CPULimit != "" {
 		if err := cgroup.ApplyLimits(cmd.Process.Pid, name, cfg.MaxMemory, cfg.CPULimit); err != nil {
-			logger.Log.Warnw("Failed to apply resource limits (continuing without limits)",
+			logger.Log.Warn("Failed to apply resource limits (continuing without limits)",
 				"service", name,
 				"error", err,
 			)
@@ -249,7 +257,7 @@ func (m *Manager) monitor(key, name string, cfg types.ServiceConfig, uid, gid ui
 		}
 
 		if !shouldRestart {
-			logger.Log.Infow("Process exited, not restarting",
+			logger.Log.Info("Process exited, not restarting",
 				"service", name,
 				"uid", uid,
 				"error", err,
@@ -260,7 +268,7 @@ func (m *Manager) monitor(key, name string, cfg types.ServiceConfig, uid, gid ui
 			return
 		}
 
-		logger.Log.Infow("Process exited, restarting...",
+		logger.Log.Info("Process exited, restarting...",
 			"service", name,
 			"uid", uid,
 			"error", err,
@@ -272,7 +280,7 @@ func (m *Manager) monitor(key, name string, cfg types.ServiceConfig, uid, gid ui
 		m.mu.Lock()
 		newProc, spawnErr := m.spawnProcess(name, cfg, uid, gid)
 		if spawnErr != nil {
-			logger.Log.Errorw("Failed to restart process",
+			logger.Log.Error("Failed to restart process",
 				"service", name,
 				"error", spawnErr,
 			)
@@ -323,7 +331,7 @@ func (m *Manager) stopProcess(key string, proc *ManagedProcess) error {
 	// Cleanup cgroup
 	cgroup.Cleanup(proc.Info.Name)
 
-	logger.Log.Infow("Process stopped",
+	logger.Log.Info("Process stopped",
 		"service", proc.Info.Name,
 		"pid", proc.Info.PID,
 	)
@@ -408,14 +416,14 @@ func (m *Manager) LoadState() error {
 		return fmt.Errorf("failed to unmarshal state: %w", err)
 	}
 
-	logger.Log.Infow("Loading persisted services", "count", len(state.Services))
+	logger.Log.Info("Loading persisted services", "count", len(state.Services))
 
 	for _, svc := range state.Services {
-		logger.Log.Infow("Restarting persisted service", "service", svc.Name, "uid", svc.UID)
+		logger.Log.Info("Restarting persisted service", "service", svc.Name, "uid", svc.UID)
 		// We use a simplified Start that doesn't persist (to avoid loop or redundant writes)
 		// Actually, Start persists, which is fine, it will just overwrite with the same data.
 		if err := m.Start(svc.Name, svc.Config, svc.UID, svc.GID); err != nil {
-			logger.Log.Errorw("Failed to restart persisted service",
+			logger.Log.Error("Failed to restart persisted service",
 				"service", svc.Name,
 				"uid", svc.UID,
 				"error", err,

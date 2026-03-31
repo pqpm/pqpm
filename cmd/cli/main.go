@@ -23,6 +23,7 @@ func main() {
 	rootCmd.AddCommand(stopCmd())
 	rootCmd.AddCommand(restartCmd())
 	rootCmd.AddCommand(logCmd())
+	rootCmd.AddCommand(pingCmd())
 	rootCmd.AddCommand(versionCmd())
 
 	if err := rootCmd.Execute(); err != nil {
@@ -51,11 +52,11 @@ func statusCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Printf("%-20s %-8s %-10s %-8s %s\n", "NAME", "PID", "STATUS", "RESTARTS", "COMMAND")
-			fmt.Println("----------------------------------------------------------------------")
+			fmt.Printf("%-20s %-8s %-10s %-10s %-10s %-8s %s\n", "NAME", "PID", "STATUS", "MEMORY", "CPU", "RESTARTS", "COMMAND")
+			fmt.Println("-------------------------------------------------------------------------------------------------")
 			for _, svc := range resp.Services {
-				fmt.Printf("%-20s %-8d %-10s %-8d %s\n",
-					svc.Name, svc.PID, svc.Status, svc.Restarts, svc.Command)
+				fmt.Printf("%-20s %-8d %-10s %-10s %-10s %-8d %s\n",
+					svc.Name, svc.PID, svc.Status, svc.MemoryUsage, svc.CPUUsage, svc.Restarts, svc.Command)
 			}
 			return nil
 		},
@@ -140,6 +141,28 @@ func versionCmd() *cobra.Command {
 		Short: "Print the version of pqpm",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println(version.String())
+		},
+	}
+}
+
+func pingCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "ping",
+		Short: "Check if the daemon is responsive",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resp, err := socket.SendRequest(&types.DaemonRequest{
+				Action: "ping",
+			})
+			if err != nil {
+				return err
+			}
+
+			if !resp.Success {
+				return fmt.Errorf("error: %s", resp.Message)
+			}
+
+			fmt.Println(resp.Message)
+			return nil
 		},
 	}
 }

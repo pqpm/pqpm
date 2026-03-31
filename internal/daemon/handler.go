@@ -31,7 +31,7 @@ func (h *Handler) HandleConnection(conn net.Conn) {
 	// Get peer credentials for identity validation
 	cred, err := socket.GetPeerCred(conn)
 	if err != nil {
-		logger.Log.Warnw("Failed to get peer credentials", "error", err)
+		logger.Log.Warn("Failed to get peer credentials", "error", err)
 		socket.WriteResponse(conn, &types.DaemonResponse{
 			Success: false,
 			Message: "Failed to verify identity: " + err.Error(),
@@ -39,7 +39,7 @@ func (h *Handler) HandleConnection(conn net.Conn) {
 		return
 	}
 
-	logger.Log.Debugw("Connection received",
+	logger.Log.Debug("Connection received",
 		"uid", cred.UID,
 		"gid", cred.GID,
 		"pid", cred.PID,
@@ -48,7 +48,7 @@ func (h *Handler) HandleConnection(conn net.Conn) {
 	// Read the request
 	req, err := socket.ReadRequest(conn)
 	if err != nil {
-		logger.Log.Warnw("Failed to read request", "error", err)
+		logger.Log.Warn("Failed to read request", "error", err)
 		socket.WriteResponse(conn, &types.DaemonResponse{
 			Success: false,
 			Message: "Invalid request: " + err.Error(),
@@ -69,6 +69,8 @@ func (h *Handler) HandleConnection(conn net.Conn) {
 		resp = h.handleStatus(cred)
 	case "log":
 		resp = h.handleLog(req, cred)
+	case "ping":
+		resp = &types.DaemonResponse{Success: true, Message: "pong"}
 	default:
 		resp = &types.DaemonResponse{
 			Success: false,
@@ -81,11 +83,17 @@ func (h *Handler) HandleConnection(conn net.Conn) {
 
 // handleStart loads the user's config and starts the named service.
 func (h *Handler) handleStart(req *types.DaemonRequest, cred *socket.PeerCred) *types.DaemonResponse {
-	cfg, svc, err := h.loadServiceConfig(req.Service, cred.UID)
+	_, svc, err := h.loadServiceConfig(req.Service, cred.UID)
 	if err != nil {
 		return &types.DaemonResponse{Success: false, Message: err.Error()}
 	}
-	_ = cfg // cfg used for loading; svc is what we need
+
+	// Security: Ensure working directory is within user's home
+	if svc.WorkingDir != "" {
+		if err := config.SanitizeUserPath(svc.WorkingDir, cred.UID); err != nil {
+			return &types.DaemonResponse{Success: false, Message: "Security violation: " + err.Error()}
+		}
+	}
 
 	if err := h.Manager.Start(req.Service, *svc, cred.UID, cred.GID); err != nil {
 		return &types.DaemonResponse{Success: false, Message: err.Error()}

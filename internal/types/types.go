@@ -17,14 +17,17 @@ type UserConfig struct {
 
 // ProcessInfo holds runtime information about a managed process
 type ProcessInfo struct {
-	Name     string
-	PID      int
-	Status   string // "running", "stopped", "crashed"
-	UID      uint32
-	GID      uint32
-	Command  string
-	Restarts int
-	Config   ServiceConfig
+	Name        string        `json:"name"`
+	PID         int           `json:"pid"`
+	Status      string        `json:"status"` // "running", "stopped", "crashed"
+	UID         uint32        `json:"uid"`
+	GID         uint32        `json:"gid"`
+	Command     string        `json:"command"`
+	Restarts    int           `json:"restarts"`
+	MemoryUsage string        `json:"memory_usage"` // e.g. "12.5MB"
+	CPUUsage    string        `json:"cpu_usage"`    // e.g. "1.2%"
+	Uptime      string        `json:"uptime"`       // e.g. "2h 30m"
+	Config      ServiceConfig `json:"config"`
 }
 
 // DaemonRequest is a message sent from the CLI to the daemon over the Unix socket

@@ -26,13 +26,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
-	defer logger.Sync()
 
 	logger.Log.Info("Starting PQPM daemon (pqpmd)...")
 
 	// Verify running as root (required to drop privileges)
 	if os.Geteuid() != 0 {
-		logger.Log.Fatal("pqpmd must be run as root to manage user processes")
+		logger.Log.Error("pqpmd must be run as root to manage user processes")
+		os.Exit(1)
 	}
 
 	// Create process manager
@@ -40,7 +40,7 @@ func main() {
 
 	// Load and restart persisted services
 	if err := mgr.LoadState(); err != nil {
-		logger.Log.Warnw("Failed to load persisted state", "error", err)
+		logger.Log.Warn("Failed to load persisted state", "error", err)
 	}
 
 	// Create request handler
@@ -49,11 +49,12 @@ func main() {
 	// Start listening on Unix socket
 	listener, err := socket.Listen()
 	if err != nil {
-		logger.Log.Fatalw("Failed to start socket listener", "error", err)
+		logger.Log.Error("Failed to start socket listener", "error", err)
+		os.Exit(1)
 	}
 	defer listener.Close()
 
-	logger.Log.Infow("Daemon listening", "socket", socket.SocketPath)
+	logger.Log.Info("Daemon listening", "socket", socket.SocketPath)
 
 	// Handle graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -61,11 +62,10 @@ func main() {
 
 	go func() {
 		sig := <-sigCh
-		logger.Log.Infow("Received shutdown signal", "signal", sig)
+		logger.Log.Info("Received shutdown signal", "signal", sig)
 		logger.Log.Info("Stopping all managed processes...")
 		mgr.StopAll()
 		listener.Close()
-		logger.Sync()
 		os.Exit(0)
 	}()
 
@@ -73,7 +73,7 @@ func main() {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			logger.Log.Warnw("Failed to accept connection", "error", err)
+			logger.Log.Warn("Failed to accept connection", "error", err)
 			continue
 		}
 		go handler.HandleConnection(conn)

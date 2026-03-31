@@ -1,39 +1,43 @@
 package logger
 
 import (
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"io"
+	"log/slog"
+	"os"
 )
 
-var Log *zap.SugaredLogger
+// SLog is the global structured logger.
+var Log *slog.Logger
 
-// Init initializes the global logger.
-// For the daemon, use production config; for CLI, use development config.
+// Init initializes the global slog logger.
+// mode can be "daemon" for production-style JSON logging or "cli" for text logging.
 func Init(mode string) error {
-	var cfg zap.Config
+	var handler slog.Handler
 
-	switch mode {
-	case "daemon":
-		cfg = zap.NewProductionConfig()
-		cfg.OutputPaths = []string{"/var/log/pqpm/pqpmd.log", "stdout"}
-		cfg.ErrorOutputPaths = []string{"/var/log/pqpm/pqpmd.log", "stderr"}
-	default:
-		cfg = zap.NewDevelopmentConfig()
-		cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	if mode == "daemon" {
+		// For daemon, log to both file and stdout/stderr
+		logFile, err := os.OpenFile("/var/log/pqpm/pqpmd.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return err
+		}
+
+		// MultiWriter to log to both file and stdout
+		mw := io.MultiWriter(os.Stdout, logFile)
+		handler = slog.NewJSONHandler(mw, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+	} else {
+		// For CLI, use text handler on stdout
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})
 	}
 
-	logger, err := cfg.Build()
-	if err != nil {
-		return err
-	}
-
-	Log = logger.Sugar()
+	Log = slog.New(handler)
+	slog.SetDefault(Log)
 	return nil
 }
 
-// Sync flushes any buffered log entries.
+// Sync is a no-op for slog (kept for compatibility with previous zap-based code)
 func Sync() {
-	if Log != nil {
-		_ = Log.Sync()
-	}
 }

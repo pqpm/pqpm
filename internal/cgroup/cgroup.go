@@ -59,6 +59,43 @@ func Cleanup(serviceName string) error {
 	return os.RemoveAll(cgroupPath)
 }
 
+// GetMetrics returns the current memory and CPU usage for a service.
+func GetMetrics(serviceName string) (memory string, cpu string, err error) {
+	cgroupPath := filepath.Join(cgroupBasePath, serviceName)
+
+	// Memory usage
+	memFile := filepath.Join(cgroupPath, "memory.current")
+	memData, err := os.ReadFile(memFile)
+	if err == nil {
+		memBytes, _ := strconv.ParseInt(strings.TrimSpace(string(memData)), 10, 64)
+		memory = formatMemory(memBytes)
+	} else {
+		memory = "0B"
+	}
+
+	// CPU usage (this is a simplified version, as true CPU % requires delta over time)
+	// For now, we'll just return total usage time or a placeholder
+	cpuFile := filepath.Join(cgroupPath, "cpu.stat")
+	cpuData, err := os.ReadFile(cpuFile)
+	if err == nil {
+		// Example format:
+		// usage_usec 12345
+		// user_usec 10000
+		// system_usec 2345
+		lines := strings.Split(string(cpuData), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "usage_usec") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 {
+					cpu = fields[1] + "us"
+				}
+			}
+		}
+	}
+
+	return memory, cpu, nil
+}
+
 // parseMemory converts a human-readable memory string (e.g. "512MB", "1GB") to bytes.
 func parseMemory(s string) (int64, error) {
 	s = strings.TrimSpace(strings.ToUpper(s))
@@ -114,4 +151,17 @@ func parseCPULimit(s string) (string, error) {
 	}
 
 	return fmt.Sprintf("%d %d", quota, period), nil
+}
+
+func formatMemory(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
