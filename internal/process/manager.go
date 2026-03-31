@@ -1,9 +1,11 @@
 package process
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -13,6 +15,8 @@ import (
 	"github.com/pqpm/pqpm/internal/logger"
 	"github.com/pqpm/pqpm/internal/types"
 )
+
+const StateFilePath = "/var/lib/pqpm/state.json"
 
 // Manager tracks and controls all managed processes.
 type Manager struct {
@@ -53,6 +57,11 @@ func (m *Manager) Start(name string, cfg types.ServiceConfig, uid, gid uint32) e
 	key := processKey(name, uid)
 	m.processes[key] = proc
 
+	// Persist the new state
+	if err := m.Persist(); err != nil {
+		logger.Log.Warnw("Failed to persist state", "error", err)
+	}
+
 	// Start monitoring goroutine for auto-restart
 	go m.monitor(key, name, cfg, uid, gid)
 
@@ -77,7 +86,16 @@ func (m *Manager) Stop(name string, uid uint32) error {
 		return fmt.Errorf("service %q not found", name)
 	}
 
-	return m.stopProcess(key, proc)
+	if err := m.stopProcess(key, proc); err != nil {
+		return err
+	}
+
+	// Persist the new state (after removing the process from active tracking)
+	if err := m.Persist(); err != nil {
+		logger.Log.Warnw("Failed to persist state", "error", err)
+	}
+
+	return nil
 }
 
 // Restart stops and then starts a process.
@@ -338,4 +356,72 @@ func setupLogFile(name string, uid uint32) (*os.File, error) {
 	}
 
 	return f, nil
+}
+
+// Persist saves the list of currently managed processes to a JSON file.
+func (m *Manager) Persist() error {
+	// We only want to persist processes that aren't explicitly stopped.
+	// But in this simple manager, we remove them from the map when stopped.
+	// So we can just persist the whole map.
+
+	var state types.DaemonState
+	for _, proc := range m.processes {
+		if !proc.Stopped {
+			state.Services = append(state.Services, types.PersistedService{
+				Name:   proc.Info.Name,
+				UID:    proc.Info.UID,
+				GID:    proc.Info.GID,
+				Config: proc.Info.Config,
+			})
+		}
+	}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal state: %w", err)
+	}
+
+	// Create directory if it doesn't exist (though Makefile should handle it)
+	if err := os.MkdirAll(filepath.Dir(StateFilePath), 0755); err != nil {
+		return fmt.Errorf("failed to create state directory: %w", err)
+	}
+
+	if err := os.WriteFile(StateFilePath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write state file: %w", err)
+	}
+
+	return nil
+}
+
+// LoadState reads the state file and restarts all previously running services.
+func (m *Manager) LoadState() error {
+	data, err := os.ReadFile(StateFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // No state file is fine
+		}
+		return fmt.Errorf("failed to read state file: %w", err)
+	}
+
+	var state types.DaemonState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return fmt.Errorf("failed to unmarshal state: %w", err)
+	}
+
+	logger.Log.Infow("Loading persisted services", "count", len(state.Services))
+
+	for _, svc := range state.Services {
+		logger.Log.Infow("Restarting persisted service", "service", svc.Name, "uid", svc.UID)
+		// We use a simplified Start that doesn't persist (to avoid loop or redundant writes)
+		// Actually, Start persists, which is fine, it will just overwrite with the same data.
+		if err := m.Start(svc.Name, svc.Config, svc.UID, svc.GID); err != nil {
+			logger.Log.Errorw("Failed to restart persisted service",
+				"service", svc.Name,
+				"uid", svc.UID,
+				"error", err,
+			)
+		}
+	}
+
+	return nil
 }

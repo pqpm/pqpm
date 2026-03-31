@@ -72,9 +72,10 @@ install: build
 	install -d -m 0755 /var/run/pqpm
 	install -d -m 0755 /var/log/pqpm
 	install -d -m 0755 /var/log/pqpm/users
+	install -d -m 0755 /var/lib/pqpm
 
 uninstall:
 	@echo "Removing binaries..."
 	rm -f /usr/local/bin/$(BINARY_DAEMON)
 	rm -f /usr/local/bin/$(BINARY_CLI)
-	@echo "Note: /var/run/pqpm and /var/log/pqpm were not removed. Remove manually if desired."
+	@echo "Note: /var/run/pqpm, /var/log/pqpm, and /var/lib/pqpm were not removed. Remove manually if desired."

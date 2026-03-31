@@ -39,3 +39,16 @@ type DaemonResponse struct {
 	Message  string        `json:"message"`
 	Services []ProcessInfo `json:"services,omitempty"`
 }
+
+// PersistedService holds the information needed to restart a service.
+type PersistedService struct {
+	Name   string        `json:"name"`
+	UID    uint32        `json:"uid"`
+	GID    uint32        `json:"gid"`
+	Config ServiceConfig `json:"config"`
+}
+
+// DaemonState is the structure of the file used to persist services across restarts.
+type DaemonState struct {
+	Services []PersistedService `json:"services"`
+}

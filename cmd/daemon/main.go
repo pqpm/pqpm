@@ -13,6 +13,14 @@ import (
 )
 
 func main() {
+	// Ensure necessary directories exist before initializing logger
+	dirs := []string{"/var/run/pqpm", "/var/log/pqpm", "/var/log/pqpm/users", "/var/lib/pqpm"}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create directory %s: %v\n", dir, err)
+		}
+	}
+
 	// Initialize logger
 	if err := logger.Init("daemon"); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
@@ -29,6 +37,11 @@ func main() {
 
 	// Create process manager
 	mgr := process.NewManager()
+
+	// Load and restart persisted services
+	if err := mgr.LoadState(); err != nil {
+		logger.Log.Warnw("Failed to load persisted state", "error", err)
+	}
 
 	// Create request handler
 	handler := daemon.NewHandler(mgr)

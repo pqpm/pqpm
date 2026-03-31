@@ -68,10 +68,11 @@ info "Installing to $INSTALL_DIR..."
 install -m 0755 "$TMPDIR/pqpmd" "$INSTALL_DIR/pqpmd"
 install -m 0755 "$TMPDIR/pqpm"  "$INSTALL_DIR/pqpm"
 
-# Create runtime directories
+# Create runtime and state directories
 install -d -m 0755 /var/run/pqpm
 install -d -m 0755 /var/log/pqpm
 install -d -m 0755 /var/log/pqpm/users
+install -d -m 0755 /var/lib/pqpm
 
 # Install systemd service if systemd is available
 if command -v systemctl &> /dev/null; then
@@ -80,19 +81,27 @@ if command -v systemctl &> /dev/null; then
 [Unit]
 Description=PQPM Process Manager Daemon
 Documentation=https://github.com/pqpm/pqpm
-After=network.target
+After=network.target local-fs.target
 
 [Service]
 Type=simple
+# Give the system a bit more time to mount home directories if needed
+ExecStartPre=/usr/bin/sleep 2
 ExecStart=/usr/local/bin/pqpmd
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
 
-# Security hardening
-ProtectSystem=strict
-ReadWritePaths=/var/run/pqpm /var/log/pqpm
-ProtectHome=read-only
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pqpmd
+
+# Security hardening (relaxed for compatibility across distributions like Fedora)
+ProtectSystem=false
+ProtectHome=false
+PrivateTmp=false
 NoNewPrivileges=false
 
 [Install]

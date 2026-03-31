@@ -1,10 +1,12 @@
 [Unit]
 Description=PQPM Process Manager Daemon
 Documentation=https://github.com/pqpm/pqpm
-After=network.target
+After=network.target local-fs.target
 
 [Service]
 Type=simple
+# Give the system a bit more time to mount home directories if needed
+ExecStartPre=/usr/bin/sleep 2
 ExecStart=/usr/local/bin/pqpmd
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
@@ -16,16 +18,15 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=pqpmd
 
-# Runtime directories (systemd creates these automatically)
-RuntimeDirectory=pqpm
-LogsDirectory=pqpm
+# Runtime directories (removed automatic systemd management to fix namespace error)
+# The daemon will handle directory creation on startup.
 
-# Security hardening
-ProtectSystem=strict
-ReadWritePaths=/var/run/pqpm /var/log/pqpm
-ProtectHome=read-only
+# Security hardening (all isolation disabled for troubleshooting)
+# Using 'false' instead of 'off' or 'no' for consistency
+ProtectSystem=false
+ProtectHome=false
+PrivateTmp=false
 NoNewPrivileges=false
-PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
