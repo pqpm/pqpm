@@ -1,0 +1,26 @@
+# PQPM Example Configuration
+# Copy this file to ~/.pqpm.toml and customize for your services.
+#
+# Each [service.<name>] block defines a managed process.
+# Start a service with: pqpm start <name>
+
+[service.my-worker]
+command = "/usr/bin/php /home/user/public_html/artisan queue:work"
+restart = "always"          # "always", "on-failure", or "never"
+max_memory = "512MB"        # Memory limit (e.g. "256MB", "1GB")
+cpu_limit = "20%"           # CPU limit as a percentage
+# working_dir = "/home/user/public_html"
+# log_file = "/home/user/logs/my-worker.log"
+
+[service.api-server]
+command = "/home/user/bin/api-server --port 8080"
+restart = "on-failure"
+max_memory = "1GB"
+cpu_limit = "50%"
+working_dir = "/home/user/api"
+
+[service.python-bot]
+command = "/usr/bin/python3 /home/user/bots/discord_bot.py"
+restart = "always"
+max_memory = "256MB"
+cpu_limit = "10%"
