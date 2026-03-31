@@ -68,7 +68,7 @@ sudo install -m 0755 pqpm /usr/local/bin/
 
 ### Build from Source
 
-Requires Go 1.21+:
+Requires Go 1.25+:
 
 ```bash
 git clone https://github.com/pqpm/pqpm.git
@@ -76,6 +76,39 @@ cd pqpm
 make build          # Binaries output to ./bin/
 sudo make install   # Install to /usr/local/bin + create runtime dirs
 ```
+
+## Updating PQPM
+
+To update PQPM to the latest version, follow these steps:
+
+### Using the Install Script (Recommended)
+
+Simply run the one-liner again. It will detect your system, download the latest release, and overwrite the existing binaries:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install.sh | sudo bash
+```
+
+The script will automatically reload the systemd daemon. You should restart the service to apply the update:
+
+```bash
+sudo systemctl restart pqpmd
+```
+
+### From Source
+
+If you installed from source, pull the latest changes and rebuild:
+
+```bash
+cd /path/to/pqpm
+git pull origin main
+make build
+sudo make install
+sudo systemctl daemon-reload
+sudo systemctl restart pqpmd
+```
+
+> **Note:** Managed user processes will continue to run during the binary update, but they will be "re-adopted" by the daemon once it restarts.
 
 ## Quick Start
 
