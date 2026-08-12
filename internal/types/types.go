@@ -33,14 +33,15 @@ type ProcessInfo struct {
 
 // DaemonRequest is a message sent from the CLI to the daemon over the Unix socket
 type DaemonRequest struct {
-	Action  string `json:"action"`  // "start", "stop", "restart", "status", "log"
-	Service string `json:"service"` // service name
+	Action  string `json:"action"`  // "start", "stop", "restart", "reload", "status", "log"
+	Service string `json:"service"` // service name (optional for reload-all)
 }
 
 // DaemonResponse is the reply from the daemon back to the CLI
 type DaemonResponse struct {
 	Success  bool          `json:"success"`
 	Message  string        `json:"message"`
+	LogPath  string        `json:"log_path,omitempty"`
 	Services []ProcessInfo `json:"services,omitempty"`
 }
 

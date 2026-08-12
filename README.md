@@ -163,7 +163,9 @@ pqpm status
 | `pqpm start <name>` | Register and start a service from your config file |
 | `pqpm stop <name>` | Stop a running service |
 | `pqpm restart <name>` | Restart a specific service |
-| `pqpm log <name>` | View output/error logs for a process |
+| `pqpm reload <name>` | Re-read `~/.pqpm.toml` and restart that service |
+| `pqpm reload --all` | Re-read config and restart all managed services |
+| `pqpm log [-f] [-n N] <name>` | View or follow service logs |
 | `pqpm version` | Print the installed version |
 
 ## Configuration Reference

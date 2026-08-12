@@ -93,6 +93,9 @@ Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
 
+# Allow pqpmd to manage nested cgroups for per-service memory/CPU limits.
+Delegate=yes
+
 # Logging
 StandardOutput=journal
 StandardError=journal

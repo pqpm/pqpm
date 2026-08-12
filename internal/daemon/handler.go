@@ -5,6 +5,7 @@ import (
 	"net"
 	"os/user"
 	"strconv"
+	"strings"
 
 	"github.com/pqpm/pqpm/internal/config"
 	"github.com/pqpm/pqpm/internal/logger"
@@ -28,7 +29,6 @@ func NewHandler(mgr *process.Manager) *Handler {
 func (h *Handler) HandleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	// Get peer credentials for identity validation
 	cred, err := socket.GetPeerCred(conn)
 	if err != nil {
 		logger.Log.Warn("Failed to get peer credentials", "error", err)
@@ -45,7 +45,6 @@ func (h *Handler) HandleConnection(conn net.Conn) {
 		"pid", cred.PID,
 	)
 
-	// Read the request
 	req, err := socket.ReadRequest(conn)
 	if err != nil {
 		logger.Log.Warn("Failed to read request", "error", err)
@@ -56,7 +55,6 @@ func (h *Handler) HandleConnection(conn net.Conn) {
 		return
 	}
 
-	// Dispatch based on action
 	var resp *types.DaemonResponse
 	switch req.Action {
 	case "start":
@@ -65,6 +63,8 @@ func (h *Handler) HandleConnection(conn net.Conn) {
 		resp = h.handleStop(req, cred)
 	case "restart":
 		resp = h.handleRestart(req, cred)
+	case "reload":
+		resp = h.handleReload(req, cred)
 	case "status":
 		resp = h.handleStatus(cred)
 	case "log":
@@ -81,18 +81,13 @@ func (h *Handler) HandleConnection(conn net.Conn) {
 	socket.WriteResponse(conn, resp)
 }
 
-// handleStart loads the user's config and starts the named service.
 func (h *Handler) handleStart(req *types.DaemonRequest, cred *socket.PeerCred) *types.DaemonResponse {
 	_, svc, err := h.loadServiceConfig(req.Service, cred.UID)
 	if err != nil {
 		return &types.DaemonResponse{Success: false, Message: err.Error()}
 	}
-
-	// Security: Ensure working directory is within user's home
-	if svc.WorkingDir != "" {
-		if err := config.SanitizeUserPath(svc.WorkingDir, cred.UID); err != nil {
-			return &types.DaemonResponse{Success: false, Message: "Security violation: " + err.Error()}
-		}
+	if err := h.validateServicePaths(req.Service, cred.UID, svc); err != nil {
+		return &types.DaemonResponse{Success: false, Message: err.Error()}
 	}
 
 	if err := h.Manager.Start(req.Service, *svc, cred.UID, cred.GID); err != nil {
@@ -105,7 +100,6 @@ func (h *Handler) handleStart(req *types.DaemonRequest, cred *socket.PeerCred) *
 	}
 }
 
-// handleStop stops the named service for the user.
 func (h *Handler) handleStop(req *types.DaemonRequest, cred *socket.PeerCred) *types.DaemonResponse {
 	if err := h.Manager.Stop(req.Service, cred.UID); err != nil {
 		return &types.DaemonResponse{Success: false, Message: err.Error()}
@@ -117,10 +111,12 @@ func (h *Handler) handleStop(req *types.DaemonRequest, cred *socket.PeerCred) *t
 	}
 }
 
-// handleRestart reloads config and restarts the service.
 func (h *Handler) handleRestart(req *types.DaemonRequest, cred *socket.PeerCred) *types.DaemonResponse {
 	_, svc, err := h.loadServiceConfig(req.Service, cred.UID)
 	if err != nil {
+		return &types.DaemonResponse{Success: false, Message: err.Error()}
+	}
+	if err := h.validateServicePaths(req.Service, cred.UID, svc); err != nil {
 		return &types.DaemonResponse{Success: false, Message: err.Error()}
 	}
 
@@ -134,7 +130,62 @@ func (h *Handler) handleRestart(req *types.DaemonRequest, cred *socket.PeerCred)
 	}
 }
 
-// handleStatus returns all processes for the requesting user.
+// handleReload re-reads ~/.pqpm.toml and restarts service(s) with the new config.
+// req.Service must be a concrete name, or "*" for all managed services.
+func (h *Handler) handleReload(req *types.DaemonRequest, cred *socket.PeerCred) *types.DaemonResponse {
+	if req.Service == "" {
+		return &types.DaemonResponse{
+			Success: false,
+			Message: "service name required (use explicit name or \"*\" for all)",
+		}
+	}
+
+	names := []string{}
+	if req.Service == "*" {
+		for _, svc := range h.Manager.Status(cred.UID) {
+			names = append(names, svc.Name)
+		}
+		if len(names) == 0 {
+			return &types.DaemonResponse{Success: false, Message: "No running services to reload"}
+		}
+	} else {
+		names = []string{req.Service}
+	}
+
+	var okNames []string
+	var errs []string
+	for _, name := range names {
+		_, svc, err := h.loadServiceConfig(name, cred.UID)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		if err := h.validateServicePaths(name, cred.UID, svc); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		if err := h.Manager.Restart(name, *svc, cred.UID, cred.GID); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		okNames = append(okNames, name)
+	}
+
+	if len(okNames) == 0 {
+		return &types.DaemonResponse{
+			Success: false,
+			Message: "Reload failed: " + strings.Join(errs, "; "),
+		}
+	}
+
+	msg := fmt.Sprintf("Reloaded %s from ~/.pqpm.toml", strings.Join(okNames, ", "))
+	if len(errs) > 0 {
+		msg += " (errors: " + strings.Join(errs, "; ") + ")"
+		return &types.DaemonResponse{Success: false, Message: msg}
+	}
+	return &types.DaemonResponse{Success: true, Message: msg}
+}
+
 func (h *Handler) handleStatus(cred *socket.PeerCred) *types.DaemonResponse {
 	services := h.Manager.Status(cred.UID)
 	return &types.DaemonResponse{
@@ -144,17 +195,46 @@ func (h *Handler) handleStatus(cred *socket.PeerCred) *types.DaemonResponse {
 	}
 }
 
-// handleLog returns the log file path for the service (placeholder for now).
+// handleLog returns the resolved log file path for the calling user to read/tail.
 func (h *Handler) handleLog(req *types.DaemonRequest, cred *socket.PeerCred) *types.DaemonResponse {
-	logPath := fmt.Sprintf("/var/log/pqpm/users/%d/%s.log", cred.UID, req.Service)
+	if req.Service == "" {
+		return &types.DaemonResponse{Success: false, Message: "service name is required"}
+	}
+
+	logPath := h.Manager.LogPath(req.Service, cred.UID)
+	if _, svc, err := h.loadServiceConfig(req.Service, cred.UID); err == nil {
+		if resolved, err := process.ResolveLogPath(req.Service, cred.UID, *svc); err == nil {
+			logPath = resolved
+		}
+	} else if !h.Manager.HasService(req.Service, cred.UID) {
+		return &types.DaemonResponse{Success: false, Message: err.Error()}
+	}
+
 	return &types.DaemonResponse{
 		Success: true,
 		Message: fmt.Sprintf("Log file: %s", logPath),
+		LogPath: logPath,
 	}
 }
 
-// loadServiceConfig looks up the user's home directory, loads their .pqpm.toml,
-// and returns the config for the requested service.
+func (h *Handler) validateServicePaths(name string, uid uint32, svc *types.ServiceConfig) error {
+	if svc.WorkingDir != "" {
+		if err := config.SanitizeUserPath(svc.WorkingDir, uid); err != nil {
+			return fmt.Errorf("security violation: %w", err)
+		}
+	}
+	if svc.LogFile != "" {
+		logPath, err := process.ResolveLogPath(name, uid, *svc)
+		if err != nil {
+			return err
+		}
+		if err := config.SanitizeUserPath(logPath, uid); err != nil {
+			return fmt.Errorf("security violation: %w", err)
+		}
+	}
+	return nil
+}
+
 func (h *Handler) loadServiceConfig(serviceName string, uid uint32) (*types.UserConfig, *types.ServiceConfig, error) {
 	u, err := user.LookupId(strconv.FormatUint(uint64(uid), 10))
 	if err != nil {

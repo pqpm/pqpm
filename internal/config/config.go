@@ -77,6 +77,10 @@ func ValidateServiceConfig(name string, svc *types.ServiceConfig) error {
 		}
 	}
 
+	if svc.LogFile != "" && !filepath.IsAbs(svc.LogFile) && svc.WorkingDir == "" {
+		return fmt.Errorf("service %q: relative log_file requires working_dir", name)
+	}
+
 	validRestart := map[string]bool{
 		"always":     true,
 		"on-failure": true,

@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/pqpm/pqpm/internal/cgroup"
 	"github.com/pqpm/pqpm/internal/daemon"
 	"github.com/pqpm/pqpm/internal/logger"
 	"github.com/pqpm/pqpm/internal/process"
@@ -33,6 +34,12 @@ func main() {
 	if os.Geteuid() != 0 {
 		logger.Log.Error("pqpmd must be run as root to manage user processes")
 		os.Exit(1)
+	}
+
+	if err := cgroup.EnsureHierarchy(); err != nil {
+		logger.Log.Warn("Cgroup hierarchy unavailable; resource limits/metrics may not work",
+			"error", err,
+		)
 	}
 
 	// Create process manager

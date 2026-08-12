@@ -6,21 +6,85 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const cgroupBasePath = "/sys/fs/cgroup/pqpm"
 
+var ensureOnce sync.Once
+var ensureErr error
+
+// EnsureHierarchy creates the pqpm cgroup root and enables memory/cpu controllers.
+// Safe to call multiple times.
+func EnsureHierarchy() error {
+	ensureOnce.Do(func() {
+		ensureErr = ensureHierarchy()
+	})
+	return ensureErr
+}
+
+func ensureHierarchy() error {
+	// Enable controllers on the system root so children can use them.
+	if err := enableControllers("/sys/fs/cgroup", "memory", "cpu"); err != nil {
+		// Non-fatal if already enabled or unavailable; continue and try our subtree.
+		_ = err
+	}
+
+	if err := os.MkdirAll(cgroupBasePath, 0755); err != nil {
+		return fmt.Errorf("failed to create cgroup base %s: %w", cgroupBasePath, err)
+	}
+
+	if err := enableControllers(cgroupBasePath, "memory", "cpu"); err != nil {
+		return fmt.Errorf("failed to enable cgroup controllers under %s: %w", cgroupBasePath, err)
+	}
+
+	return nil
+}
+
+func enableControllers(path string, controllers ...string) error {
+	subtree := filepath.Join(path, "cgroup.subtree_control")
+	existing, _ := os.ReadFile(subtree)
+	have := string(existing)
+
+	var toAdd []string
+	for _, c := range controllers {
+		if !strings.Contains(have, c) {
+			toAdd = append(toAdd, "+"+c)
+		}
+	}
+	if len(toAdd) == 0 {
+		return nil
+	}
+
+	return os.WriteFile(subtree, []byte(strings.Join(toAdd, " ")), 0644)
+}
+
+func servicePath(uid uint32, serviceName string) string {
+	return filepath.Join(cgroupBasePath, strconv.FormatUint(uint64(uid), 10), serviceName)
+}
+
 // ApplyLimits creates a cgroup for the given process and applies memory/CPU limits.
 // This uses cgroup v2 (unified hierarchy).
-func ApplyLimits(pid int, serviceName string, maxMemory string, cpuLimit string) error {
-	cgroupPath := filepath.Join(cgroupBasePath, serviceName)
+func ApplyLimits(pid int, uid uint32, serviceName string, maxMemory string, cpuLimit string) error {
+	if err := EnsureHierarchy(); err != nil {
+		return err
+	}
 
-	// Create the cgroup directory
+	cgroupPath := servicePath(uid, serviceName)
+
+	// Ensure the per-UID parent has controllers enabled for nested service cgroups.
+	uidPath := filepath.Join(cgroupBasePath, strconv.FormatUint(uint64(uid), 10))
+	if err := os.MkdirAll(uidPath, 0755); err != nil {
+		return fmt.Errorf("failed to create cgroup directory %s: %w", uidPath, err)
+	}
+	if err := enableControllers(uidPath, "memory", "cpu"); err != nil {
+		return fmt.Errorf("failed to enable controllers under %s: %w", uidPath, err)
+	}
+
 	if err := os.MkdirAll(cgroupPath, 0755); err != nil {
 		return fmt.Errorf("failed to create cgroup directory %s: %w", cgroupPath, err)
 	}
 
-	// Apply memory limit
 	if maxMemory != "" {
 		memBytes, err := parseMemory(maxMemory)
 		if err != nil {
@@ -32,7 +96,6 @@ func ApplyLimits(pid int, serviceName string, maxMemory string, cpuLimit string)
 		}
 	}
 
-	// Apply CPU limit (convert percentage to cgroup v2 cpu.max format)
 	if cpuLimit != "" {
 		cpuMax, err := parseCPULimit(cpuLimit)
 		if err != nil {
@@ -44,7 +107,6 @@ func ApplyLimits(pid int, serviceName string, maxMemory string, cpuLimit string)
 		}
 	}
 
-	// Add the process to this cgroup
 	procsFile := filepath.Join(cgroupPath, "cgroup.procs")
 	if err := os.WriteFile(procsFile, []byte(strconv.Itoa(pid)), 0644); err != nil {
 		return fmt.Errorf("failed to add PID %d to cgroup: %w", pid, err)
@@ -54,16 +116,14 @@ func ApplyLimits(pid int, serviceName string, maxMemory string, cpuLimit string)
 }
 
 // Cleanup removes the cgroup directory for a service.
-func Cleanup(serviceName string) error {
-	cgroupPath := filepath.Join(cgroupBasePath, serviceName)
-	return os.RemoveAll(cgroupPath)
+func Cleanup(uid uint32, serviceName string) error {
+	return os.RemoveAll(servicePath(uid, serviceName))
 }
 
 // GetMetrics returns the current memory and CPU usage for a service.
-func GetMetrics(serviceName string) (memory string, cpu string, err error) {
-	cgroupPath := filepath.Join(cgroupBasePath, serviceName)
+func GetMetrics(uid uint32, serviceName string) (memory string, cpu string, err error) {
+	cgroupPath := servicePath(uid, serviceName)
 
-	// Memory usage
 	memFile := filepath.Join(cgroupPath, "memory.current")
 	memData, err := os.ReadFile(memFile)
 	if err == nil {
@@ -73,15 +133,9 @@ func GetMetrics(serviceName string) (memory string, cpu string, err error) {
 		memory = "0B"
 	}
 
-	// CPU usage (this is a simplified version, as true CPU % requires delta over time)
-	// For now, we'll just return total usage time or a placeholder
 	cpuFile := filepath.Join(cgroupPath, "cpu.stat")
 	cpuData, err := os.ReadFile(cpuFile)
 	if err == nil {
-		// Example format:
-		// usage_usec 12345
-		// user_usec 10000
-		// system_usec 2345
 		lines := strings.Split(string(cpuData), "\n")
 		for _, line := range lines {
 			if strings.HasPrefix(line, "usage_usec") {
@@ -91,6 +145,9 @@ func GetMetrics(serviceName string) (memory string, cpu string, err error) {
 				}
 			}
 		}
+	}
+	if cpu == "" {
+		cpu = "0us"
 	}
 
 	return memory, cpu, nil
@@ -122,12 +179,10 @@ func parseMemory(s string) (int64, error) {
 		}
 	}
 
-	// Assume raw bytes
 	return strconv.ParseInt(s, 10, 64)
 }
 
 // parseCPULimit converts a percentage string (e.g. "20%") to cgroup v2 cpu.max format.
-// cpu.max format is "$MAX $PERIOD" where period is typically 100000 (100ms).
 func parseCPULimit(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if !strings.HasSuffix(s, "%") {
@@ -144,10 +199,10 @@ func parseCPULimit(s string) (string, error) {
 		return "", fmt.Errorf("cpu_limit must be between 0%% and 100%%")
 	}
 
-	period := 100000 // 100ms in microseconds
+	period := 100000
 	quota := int(pct / 100.0 * float64(period))
 	if quota < 1000 {
-		quota = 1000 // minimum 1ms
+		quota = 1000
 	}
 
 	return fmt.Sprintf("%d %d", quota, period), nil

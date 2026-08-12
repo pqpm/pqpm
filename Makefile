@@ -16,7 +16,7 @@ LDFLAGS = -s -w \
 	-X github.com/pqpm/pqpm/internal/version.Commit=$(COMMIT) \
 	-X github.com/pqpm/pqpm/internal/version.Date=$(DATE)
 
-.PHONY: all build daemon cli clean install uninstall fmt vet test release
+.PHONY: all build daemon cli clean install uninstall fmt vet test release e2e
 
 all: build
 
@@ -38,6 +38,10 @@ clean:
 
 test:
 	$(GO) test -v -race ./...
+
+e2e:
+	@chmod +x test/e2e/*.sh
+	./test/e2e/run.sh
 
 fmt:
 	$(GO) fmt ./...
