@@ -204,7 +204,7 @@ sudo systemctl enable --now pqpm-ui   # listens on 127.0.0.1:9090
 Remove the addon (core PQPM is kept):
 
 ```bash
-sudo ./install-ui.sh --uninstall
+curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash -s -- --uninstall
 ```
 
 See [addons/ui/README.md](addons/ui/README.md) for login vs local auth and reverse-proxy notes.

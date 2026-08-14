@@ -31,8 +31,11 @@ Then in the panel: **Webmin → Webmin Configuration → Refresh Modules**. The 
 Removes `pqpm-ui`, the systemd unit, and the Webmin module. Core `pqpmd` / `pqpm` stay installed.
 
 ```bash
-sudo ./install-ui.sh --uninstall
-# or: sudo make uninstall-ui
+# Install UI + Webmin/Virtualmin module
+curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash -s -- --with-webmin
+
+# Remove UI + Webmin module (core pqpm stays)
+curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash -s -- --uninstall
 ```
 
 ## Run (any VPS)

@@ -6,8 +6,8 @@ set -euo pipefail
 #   curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash
 #   sudo ./install-ui.sh [version]
 #   sudo ./install-ui.sh --from-source
-#   sudo ./install-ui.sh --from-source --with-webmin   # optional panel module
-#   sudo ./install-ui.sh --uninstall                   # remove addon (core pqpm kept)
+#   curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash -s -- --with-webmin
+#   curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash -s -- --uninstall
 #
 # Requires core PQPM (pqpm + pqpmd) already installed (except --uninstall).
 # Does NOT require Webmin/Virtualmin.
@@ -43,11 +43,14 @@ Usage:
   sudo ./install-ui.sh --from-source [--with-webmin]
   sudo ./install-ui.sh --uninstall
 
+  curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash -s -- --with-webmin
+  curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash -s -- --uninstall
+
 Options:
   --from-source   Build pqpm-ui from this git checkout
   --with-webmin   Also install the Webmin/Virtualmin module
   --uninstall     Remove pqpm-ui, systemd unit, and Webmin module
-                  (core pqpmd/pqpm are left installed)
+                  (core pqpmd/pqpm are left installed; --with-webmin not needed)
   -h, --help      Show this help
 EOF
             exit 0
