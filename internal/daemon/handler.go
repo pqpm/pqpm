@@ -131,7 +131,7 @@ func (h *Handler) handleRestart(req *types.DaemonRequest, cred *socket.PeerCred)
 }
 
 // handleReload re-reads ~/.pqpm.toml and restarts service(s) with the new config.
-// req.Service must be a concrete name, or "*" for all managed services.
+// req.Service must be a concrete name, or "*" for all services defined in the TOML.
 func (h *Handler) handleReload(req *types.DaemonRequest, cred *socket.PeerCred) *types.DaemonResponse {
 	if req.Service == "" {
 		return &types.DaemonResponse{
@@ -140,13 +140,38 @@ func (h *Handler) handleReload(req *types.DaemonRequest, cred *socket.PeerCred) 
 		}
 	}
 
-	names := []string{}
+	u, err := user.LookupId(strconv.FormatUint(uint64(cred.UID), 10))
+	if err != nil {
+		return &types.DaemonResponse{Success: false, Message: err.Error()}
+	}
+	cfg, err := config.LoadUserConfig(u.HomeDir)
+	if err != nil {
+		return &types.DaemonResponse{Success: false, Message: err.Error()}
+	}
+
+	var names []string
+	var notes []string
 	if req.Service == "*" {
-		for _, svc := range h.Manager.Status(cred.UID) {
-			names = append(names, svc.Name)
+		for name := range cfg.Service {
+			names = append(names, name)
+		}
+		// Drop runtime leftovers that are no longer in the TOML (avoids confusing "removed" ghosts).
+		for _, running := range h.Manager.Status(cred.UID) {
+			if _, ok := cfg.Service[running.Name]; ok {
+				continue
+			}
+			if err := h.Manager.Stop(running.Name, cred.UID); err != nil {
+				notes = append(notes, fmt.Sprintf("dropped %s (not in ~/.pqpm.toml): %v", running.Name, err))
+			} else {
+				notes = append(notes, fmt.Sprintf("dropped %s (not in ~/.pqpm.toml)", running.Name))
+			}
 		}
 		if len(names) == 0 {
-			return &types.DaemonResponse{Success: false, Message: "No running services to reload"}
+			msg := "No services defined in ~/.pqpm.toml"
+			if len(notes) > 0 {
+				msg += " (" + strings.Join(notes, "; ") + ")"
+			}
+			return &types.DaemonResponse{Success: true, Message: msg}
 		}
 	} else {
 		names = []string{req.Service}
@@ -155,8 +180,12 @@ func (h *Handler) handleReload(req *types.DaemonRequest, cred *socket.PeerCred) 
 	var okNames []string
 	var errs []string
 	for _, name := range names {
-		_, svc, err := h.loadServiceConfig(name, cred.UID)
+		svc, err := config.GetServiceConfig(cfg, name)
 		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		if err := config.ValidateServiceConfig(name, svc); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
 			continue
 		}
@@ -171,14 +200,20 @@ func (h *Handler) handleReload(req *types.DaemonRequest, cred *socket.PeerCred) 
 		okNames = append(okNames, name)
 	}
 
-	if len(okNames) == 0 {
-		return &types.DaemonResponse{
-			Success: false,
-			Message: "Reload failed: " + strings.Join(errs, "; "),
+	if len(okNames) == 0 && len(errs) > 0 {
+		msg := "Reload failed: " + strings.Join(errs, "; ")
+		if len(notes) > 0 {
+			msg += " (" + strings.Join(notes, "; ") + ")"
 		}
+		return &types.DaemonResponse{Success: false, Message: msg}
 	}
 
 	msg := fmt.Sprintf("Reloaded %s from ~/.pqpm.toml", strings.Join(okNames, ", "))
+	if len(okNames) == 0 && len(notes) > 0 {
+		msg = strings.Join(notes, "; ")
+	} else if len(notes) > 0 {
+		msg += " (" + strings.Join(notes, "; ") + ")"
+	}
 	if len(errs) > 0 {
 		msg += " (errors: " + strings.Join(errs, "; ") + ")"
 		return &types.DaemonResponse{Success: false, Message: msg}

@@ -56,6 +56,12 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: go build -trimpath -ldflags "-s -w" -o bin/pqpm-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/cli
 
+      - name: Build UI addon
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -trimpath -ldflags "-s -w" -o bin/pqpm-ui-${{ matrix.goos }}-${{ matrix.goarch }} ./addons/ui/cmd/pqpm-ui
+
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:

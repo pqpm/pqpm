@@ -41,6 +41,12 @@ Run the one-liner on your Linux server:
 curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install.sh | sudo bash
 ```
 
+From a git checkout (build locally, same idea as the UI addon):
+
+```bash
+sudo ./install.sh --from-source
+```
+
 This will automatically:
 - Detect your architecture (amd64/arm64)
 - Download the latest release
@@ -159,12 +165,13 @@ pqpm status
 
 | Command | Description |
 |---|---|
-| `pqpm status` | View all running processes for the current user |
+| `pqpm list` / `pqpm ls` | List services defined in `~/.pqpm.toml` (with live status) |
+| `pqpm status` | View processes currently managed by the daemon |
 | `pqpm start <name>` | Register and start a service from your config file |
 | `pqpm stop <name>` | Stop a running service |
 | `pqpm restart <name>` | Restart a specific service |
 | `pqpm reload <name>` | Re-read `~/.pqpm.toml` and restart that service |
-| `pqpm reload --all` | Re-read config and restart all managed services |
+| `pqpm reload --all` | Re-read config and restart all services in the TOML |
 | `pqpm log [-f] [-n N] <name>` | View or follow service logs |
 | `pqpm version` | Print the installed version |
 
@@ -181,6 +188,20 @@ Each service is defined as a `[service.<name>]` block in `~/.pqpm.toml`:
 | `working_dir` | ❌ | — | Working directory for the process |
 | `log_file` | ❌ | — | Custom log file path |
 | `env` | ❌ | `{}` | Environment variables as a map (e.g. `{ NODE_ENV = "production" }`) |
+
+## Optional Web UI (any VPS)
+
+An opt-in standalone GUI lives in [`addons/ui/`](addons/ui/). It does **not** modify `pqpmd` and does **not** require Webmin.
+
+```bash
+# After core PQPM is installed
+curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash
+# or from a checkout: sudo ./install-ui.sh --from-source
+
+sudo systemctl enable --now pqpm-ui   # listens on 127.0.0.1:9090
+```
+
+See [addons/ui/README.md](addons/ui/README.md) for login vs local auth and reverse-proxy notes.
 
 ## Security & Safety
 
@@ -204,6 +225,7 @@ pqpm/
 ├── cmd/
 │   ├── cli/            # pqpm CLI binary
 │   └── daemon/         # pqpmd daemon binary
+├── addons/ui/          # Optional standalone web UI (install-ui.sh)
 ├── internal/
 │   ├── cgroup/         # Linux cgroup resource limits
 │   ├── config/         # TOML config loading & validation
@@ -215,7 +237,8 @@ pqpm/
 │   └── version/        # Build-time version info
 ├── init/
 │   └── pqpmd.service   # Systemd unit file
-├── install.sh          # One-liner install script
+├── install.sh          # Core one-liner install
+├── install-ui.sh       # Optional UI addon install
 ├── example.pqpm.toml   # Example user config
 ├── Makefile            # Build, test, install targets
 └── README.md

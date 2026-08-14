@@ -1,0 +1,16 @@
+[Unit]
+Description=PQPM Web UI (optional addon)
+Documentation=https://github.com/pqpm/pqpm/tree/main/addons/ui
+After=network.target pqpmd.service
+Wants=pqpmd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/pqpm-ui -listen 127.0.0.1:9090 -auth login
+Restart=on-failure
+RestartSec=3
+# Prefer binding to localhost and putting TLS/auth at a reverse proxy or panel.
+# For single-user mode instead: ExecStart=... -auth local
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PQPM</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="top">
+    <div class="top-brand">
+      <span class="brand">PQPM</span>
+      <span id="user-label" class="muted"></span>
+    </div>
+    <div class="top-actions">
+      <span id="daemon-status" class="pill warn">checking daemon…</span>
+      <button type="button" class="ghost" id="btn-refresh">Refresh</button>
+      <a class="ghost" href="/logout">Sign out</a>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel" aria-labelledby="services-heading">
+      <div class="panel-head">
+        <h1 id="services-heading">Services</h1>
+        <p class="lede">Start, stop, and restart processes managed by your <code>~/.pqpm.toml</code>.</p>
+      </div>
+      <div id="flash" class="flash" hidden></div>
+      <div class="table-wrap">
+        <table id="svc-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Status</th>
+              <th>PID</th>
+              <th>Memory</th>
+              <th>CPU</th>
+              <th>Restarts</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="svc-body">
+            <tr><td colspan="7" class="muted">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="logs-heading">
+      <div class="panel-head">
+        <h2 id="logs-heading">Logs</h2>
+        <p class="lede">Last lines from a service log file.</p>
+      </div>
+      <div class="row">
+        <label class="inline">
+          Service
+          <input type="text" id="log-name" placeholder="my-worker" list="svc-names">
+          <datalist id="svc-names"></datalist>
+        </label>
+        <button type="button" id="btn-log">View log</button>
+      </div>
+      <pre id="log-view" class="log" tabindex="0">Select a service and view its log.</pre>
+    </section>
+
+    <section class="panel" aria-labelledby="config-heading">
+      <div class="panel-head">
+        <h2 id="config-heading">Configuration</h2>
+        <p class="lede" id="config-path">Edit <code>~/.pqpm.toml</code>. Dangerous shell operators are rejected.</p>
+      </div>
+      <textarea id="config-editor" spellcheck="false" rows="18" aria-label="pqpm.toml contents"></textarea>
+      <div class="row">
+        <label class="check">
+          <input type="checkbox" id="config-reload" checked>
+          Reload all services after save
+        </label>
+        <button type="button" id="btn-save-config">Save config</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="confirm-dlg">
+    <form method="dialog" class="dlg">
+      <p id="confirm-msg"></p>
+      <div class="row end">
+        <button value="cancel" class="ghost">Cancel</button>
+        <button value="ok" id="confirm-ok">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

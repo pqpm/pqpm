@@ -1,0 +1,7 @@
+name=PQPM Process Manager
+category=servers
+desc=Manage long-running user processes with PQPM
+version=1.0
+os_support=*-linux
+depends=pqpm
+longdesc=Start, stop, restart, and inspect PQPM-managed services for the logged-in Virtualmin/Webmin user. Calls the local pqpm CLI so the root daemon still authenticates via SO_PEERCRED.

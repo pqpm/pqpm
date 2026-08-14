@@ -2,16 +2,20 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"os/user"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/pqpm/pqpm/internal/config"
 	"github.com/pqpm/pqpm/internal/socket"
 	"github.com/pqpm/pqpm/internal/types"
 	"github.com/pqpm/pqpm/internal/version"
@@ -25,6 +29,7 @@ func main() {
 	}
 
 	rootCmd.AddCommand(statusCmd())
+	rootCmd.AddCommand(listCmd())
 	rootCmd.AddCommand(startCmd())
 	rootCmd.AddCommand(stopCmd())
 	rootCmd.AddCommand(restartCmd())
@@ -41,7 +46,7 @@ func main() {
 func statusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status [name]",
-		Short: "View processes for the current user (optionally filter by service name)",
+		Short: "View processes currently managed by the daemon (optionally filter by name)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			resp, err := socket.SendRequest(&types.DaemonRequest{
@@ -66,12 +71,12 @@ func statusCmd() *cobra.Command {
 				}
 				services = filtered
 				if len(services) == 0 {
-					return fmt.Errorf("service %q not found", name)
+					return fmt.Errorf("service %q not found in daemon (try: pqpm list)", name)
 				}
 			}
 
 			if len(services) == 0 {
-				fmt.Println("No services running.")
+				fmt.Println("No services currently managed. Defined services: pqpm list")
 				return nil
 			}
 
@@ -80,6 +85,83 @@ func statusCmd() *cobra.Command {
 			for _, svc := range services {
 				fmt.Printf("%-20s %-8d %-10s %-10s %-10s %-8d %s\n",
 					svc.Name, svc.PID, svc.Status, svc.MemoryUsage, svc.CPUUsage, svc.Restarts, svc.Command)
+			}
+			return nil
+		},
+	}
+}
+
+func listCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list [name]",
+		Aliases: []string{"ls"},
+		Short:   "List services defined in ~/.pqpm.toml (with live status when daemon is up)",
+		Long:    "Shows every [service.*] entry from ~/.pqpm.toml.\nMerges live daemon status when available so stopped-but-defined services still appear.",
+		Args:    cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			u, err := user.Current()
+			if err != nil {
+				return err
+			}
+			cfg, err := config.LoadUserConfig(u.HomeDir)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					fmt.Printf("No config at %s/.pqpm.toml\n", u.HomeDir)
+					return nil
+				}
+				return err
+			}
+
+			names := make([]string, 0, len(cfg.Service))
+			for name := range cfg.Service {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+
+			if len(args) == 1 {
+				filter := args[0]
+				found := false
+				for _, name := range names {
+					if name == filter {
+						names = []string{name}
+						found = true
+						break
+					}
+				}
+				if !found {
+					return fmt.Errorf("service %q not defined in ~/.pqpm.toml", filter)
+				}
+			}
+
+			if len(names) == 0 {
+				fmt.Println("No services defined in ~/.pqpm.toml")
+				return nil
+			}
+
+			live := map[string]types.ProcessInfo{}
+			if resp, err := socket.SendRequest(&types.DaemonRequest{Action: "status"}); err == nil && resp.Success {
+				for _, svc := range resp.Services {
+					live[svc.Name] = svc
+				}
+			}
+
+			fmt.Printf("%-20s %-10s %-8s %-12s %s\n", "NAME", "STATUS", "PID", "RESTART", "COMMAND")
+			fmt.Println("--------------------------------------------------------------------------------")
+			for _, name := range names {
+				def := cfg.Service[name]
+				restart := def.Restart
+				if restart == "" {
+					restart = "always"
+				}
+				status := "stopped"
+				pidStr := "-"
+				if info, ok := live[name]; ok {
+					status = info.Status
+					if info.PID > 0 {
+						pidStr = fmt.Sprintf("%d", info.PID)
+					}
+				}
+				fmt.Printf("%-20s %-10s %-8s %-12s %s\n", name, status, pidStr, restart, def.Command)
 			}
 			return nil
 		},
@@ -157,7 +239,7 @@ func reloadCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "reload <name>",
 		Short: "Re-read ~/.pqpm.toml and restart a service with the new config",
-		Long:  "Reloads the user's ~/.pqpm.toml and restarts the named service.\nUse --all to reload every managed service for this user.",
+		Long:  "Reloads the user's ~/.pqpm.toml and restarts the named service.\nUse --all to reload every service defined in ~/.pqpm.toml\n(and drop runtime leftovers that are no longer in the file).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !all && len(args) != 1 {
@@ -169,7 +251,7 @@ func reloadCmd() *cobra.Command {
 
 			req := &types.DaemonRequest{Action: "reload"}
 			if all {
-				req.Service = "*" // daemon treats "*" as reload-all
+				req.Service = "*" // daemon treats "*" as reload-all from TOML
 			} else {
 				req.Service = args[0]
 			}
@@ -185,7 +267,7 @@ func reloadCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&all, "all", false, "Reload all managed services for this user")
+	cmd.Flags().BoolVar(&all, "all", false, "Reload all services defined in ~/.pqpm.toml")
 	return cmd
 }
 

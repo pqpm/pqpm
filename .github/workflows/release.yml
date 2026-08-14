@@ -34,8 +34,11 @@ jobs:
           LDFLAGS="-s -w -X github.com/pqpm/pqpm/internal/version.Version=${{ steps.version.outputs.VERSION }} -X github.com/pqpm/pqpm/internal/version.Commit=${{ github.sha }} -X github.com/pqpm/pqpm/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           go build -trimpath -ldflags "$LDFLAGS" -o dist/pqpmd ./cmd/daemon
           go build -trimpath -ldflags "$LDFLAGS" -o dist/pqpm ./cmd/cli
+          go build -trimpath -ldflags "$LDFLAGS" -o dist/pqpm-ui ./addons/ui/cmd/pqpm-ui
           cd dist && tar czf pqpm-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz pqpmd pqpm
-          rm -f pqpmd pqpm
+          mkdir -p ui-pack && mv pqpm-ui ui-pack/ && cp ../addons/ui/systemd/pqpm-ui.service ui-pack/ && cp -a ../addons/ui/webmin ui-pack/webmin
+          cd ui-pack && tar czf ../pqpm-ui-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz pqpm-ui pqpm-ui.service webmin
+          cd .. && rm -rf ui-pack pqpmd pqpm
 
       - name: Build linux/arm64
         env:
@@ -45,8 +48,11 @@ jobs:
           LDFLAGS="-s -w -X github.com/pqpm/pqpm/internal/version.Version=${{ steps.version.outputs.VERSION }} -X github.com/pqpm/pqpm/internal/version.Commit=${{ github.sha }} -X github.com/pqpm/pqpm/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           go build -trimpath -ldflags "$LDFLAGS" -o dist/pqpmd ./cmd/daemon
           go build -trimpath -ldflags "$LDFLAGS" -o dist/pqpm ./cmd/cli
+          go build -trimpath -ldflags "$LDFLAGS" -o dist/pqpm-ui ./addons/ui/cmd/pqpm-ui
           cd dist && tar czf pqpm-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz pqpmd pqpm
-          rm -f pqpmd pqpm
+          mkdir -p ui-pack && mv pqpm-ui ui-pack/ && cp ../addons/ui/systemd/pqpm-ui.service ui-pack/ && cp -a ../addons/ui/webmin ui-pack/webmin
+          cd ui-pack && tar czf ../pqpm-ui-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz pqpm-ui pqpm-ui.service webmin
+          cd .. && rm -rf ui-pack pqpmd pqpm
 
       - name: Generate checksums
         run: cd dist && sha256sum *.tar.gz > checksums.txt
@@ -94,6 +100,12 @@ jobs:
             Or use the install script:
             ```bash
             curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install.sh | sudo bash
+            ```
+
+            ### Optional UI addon (any VPS)
+
+            ```bash
+            curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash
             ```
           files: |
             dist/*.tar.gz
