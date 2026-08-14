@@ -16,10 +16,23 @@ sudo ./install-ui.sh --from-source
 curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash
 ```
 
-Optional Webmin module (only if you use Webmin):
+Optional Webmin / Virtualmin module:
 
 ```bash
 sudo ./install-ui.sh --from-source --with-webmin
+# or from a release:
+curl -sSL https://raw.githubusercontent.com/pqpm/pqpm/main/install-ui.sh | sudo bash -s -- --with-webmin
+```
+
+Then in the panel: **Webmin → Webmin Configuration → Refresh Modules**. The module appears under **Webmin → Servers → PQPM Process Manager** (or **Un-used Modules** until `pqpm` is on PATH).
+
+## Uninstall (addon only)
+
+Removes `pqpm-ui`, the systemd unit, and the Webmin module. Core `pqpmd` / `pqpm` stay installed.
+
+```bash
+sudo ./install-ui.sh --uninstall
+# or: sudo make uninstall-ui
 ```
 
 ## Run (any VPS)
@@ -47,7 +60,9 @@ sudo systemctl enable --now pqpm-ui
 
 ## Optional: Webmin / Virtualmin
 
-Pass `--with-webmin` to `install-ui.sh`. The module lives under `addons/ui/webmin/` and is **not** installed by default.
+Pass `--with-webmin` to `install-ui.sh`. The installer locates Webmin via `/etc/webmin/miniserv.conf` (including `/usr/libexec/webmin` on RHEL/Fedora Virtualmin) and registers the module with `install-module.pl`.
+
+The module directory (e.g. `/usr/libexec/webmin/pqpm`) is only Webmin CGI. It calls the real CLI at `/usr/local/bin/pqpm` from `install.sh` — they do not need to live in the same folder.
 
 ## Layout
 

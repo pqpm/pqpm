@@ -1,43 +1,57 @@
 #!/usr/bin/perl
-require './pqpm-lib.pl';
+# index.cgi — PQPM service dashboard
+use strict;
+use warnings;
+no warnings 'redefine';
+no warnings 'uninitialized';
+our (%text);
 
-ui_print_header(undef, $text{'index_title'}, '');
+require './pqpm-lib.pl';
+&ui_print_header(undef, $text{'index_title'}, '', undef, 1, 1);
+
+if (!-x &pqpm_bin()) {
+	print &ui_alert_box($text{'index_nopqpm'}, 'warn');
+	&ui_print_footer('/', $text{'index'});
+	exit;
+	}
 
 if (!&pqpm_ping_ok()) {
-	print &ui_alert_box(
-		$text{'daemon_down'} ||
-		'PQPM daemon unreachable. Install and start pqpmd, then ensure <tt>pqpm ping</tt> works for this user.',
-		'warn');
-} else {
-	print &ui_alert_box($text{'daemon_ok'} || 'Daemon is responding.', 'success');
-}
+	print &ui_alert_box($text{'daemon_down'}, 'warn');
+	}
+else {
+	print &ui_alert_box($text{'daemon_ok'}, 'success');
+	}
 
-print &ui_subheading($text{'services'} || 'Services');
-my ($code, $out) = &pqpm_run('status');
+print &ui_subheading($text{'services'});
+my ($code, $out) = &pqpm_run('list');
+if ($code != 0) {
+	($code, $out) = &pqpm_run('status');
+	}
 if ($code != 0) {
 	print &ui_alert_box(&html_escape($out || 'status failed'), 'danger');
-} else {
-	print '<pre style="white-space:pre-wrap">', &html_escape($out || 'No services running.'), '</pre>';
-}
+	}
+else {
+	print '<pre style="white-space:pre-wrap">', &html_escape($out || $text{'no_services'}), '</pre>';
+	}
 
 print &ui_links_row([
-	[ 'index.cgi', $text{'refresh'} || 'Refresh' ],
-	[ 'config.cgi', $text{'edit_config'} || 'Edit config' ],
+	[ 'index.cgi', $text{'refresh'} ],
+	[ 'config.cgi', $text{'edit_config'} ],
 ]);
 
-print &ui_subheading($text{'manage'} || 'Manage a service');
+print &ui_subheading($text{'manage'});
 print &ui_form_start('action.cgi', 'post');
 print &ui_table_start(undef, undef, 2);
-print &ui_table_row($text{'service_name'} || 'Service name', &ui_textbox('name', '', 30));
-print &ui_table_row($text{'action'} || 'Action',
+print &ui_table_row($text{'service_name'}, &ui_textbox('name', '', 30));
+print &ui_table_row($text{'action'},
 	&ui_select('action', 'restart', [
-		[ 'start',   $text{'start'} || 'Start' ],
-		[ 'stop',    $text{'stop'} || 'Stop' ],
-		[ 'restart', $text{'restart'} || 'Restart' ],
-		[ 'reload',  $text{'reload'} || 'Reload' ],
-		[ 'log',     $text{'log'} || 'View log' ],
+		[ 'start',   $text{'start'} ],
+		[ 'stop',    $text{'stop'} ],
+		[ 'restart', $text{'restart'} ],
+		[ 'reload',  $text{'reload'} ],
+		[ 'log',     $text{'log'} ],
 	]));
 print &ui_table_end();
-print &ui_form_end([[ 'ok', $text{'run'} || 'Run' ]]);
+print &ui_form_end([ [ undef, $text{'run'} ] ]);
 
-ui_print_footer('/', $text{'index'});
+&ui_print_footer('/', $text{'index'});

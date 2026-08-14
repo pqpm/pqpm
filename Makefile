@@ -17,7 +17,7 @@ LDFLAGS = -s -w \
 	-X github.com/pqpm/pqpm/internal/version.Commit=$(COMMIT) \
 	-X github.com/pqpm/pqpm/internal/version.Date=$(DATE)
 
-.PHONY: all build daemon cli ui clean install install-ui uninstall fmt vet test release e2e
+.PHONY: all build daemon cli ui clean install install-ui uninstall uninstall-ui fmt vet test release e2e
 
 all: build
 
@@ -104,6 +104,17 @@ install-ui: ui
 	install -m 0644 addons/ui/systemd/pqpm-ui.service /etc/systemd/system/pqpm-ui.service
 	@command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload || true
 	@echo "Enable with: systemctl enable --now pqpm-ui"
+
+uninstall-ui:
+	@echo "Removing UI addon (core pqpm is kept)..."
+	@if command -v systemctl >/dev/null 2>&1; then \
+		systemctl stop pqpm-ui 2>/dev/null || true; \
+		systemctl disable pqpm-ui 2>/dev/null || true; \
+		systemctl daemon-reload 2>/dev/null || true; \
+	fi
+	rm -f /usr/local/bin/$(BINARY_UI)
+	rm -f /etc/systemd/system/pqpm-ui.service /usr/lib/systemd/system/pqpm-ui.service
+	@echo "Webmin module (if any): sudo ./install-ui.sh --uninstall"
 
 uninstall:
 	@echo "Removing binaries..."

@@ -1,6 +1,8 @@
 index_title=PQPM Process Manager
+index_nopqpm=The pqpm CLI was not found. Install core PQPM with install.sh (it places pqpm in /usr/local/bin). You can set the path under Module Config.
 daemon_down=PQPM daemon unreachable. Install and start pqpmd, then ensure pqpm ping works for this user.
 daemon_ok=Daemon is responding.
+no_services=No services defined.
 services=Services
 refresh=Refresh
 edit_config=Edit config

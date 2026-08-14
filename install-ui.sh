@@ -7,8 +7,9 @@ set -euo pipefail
 #   sudo ./install-ui.sh [version]
 #   sudo ./install-ui.sh --from-source
 #   sudo ./install-ui.sh --from-source --with-webmin   # optional panel module
+#   sudo ./install-ui.sh --uninstall                   # remove addon (core pqpm kept)
 #
-# Requires core PQPM (pqpm + pqpmd) already installed.
+# Requires core PQPM (pqpm + pqpmd) already installed (except --uninstall).
 # Does NOT require Webmin/Virtualmin.
 
 REPO="pqpm/pqpm"
@@ -24,8 +25,190 @@ info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
+FROM_SOURCE=0
+WITH_WEBMIN=0
+UNINSTALL=0
+VERSION=""
+for arg in "$@"; do
+    case "$arg" in
+        --from-source) FROM_SOURCE=1 ;;
+        --with-webmin) WITH_WEBMIN=1 ;;
+        --uninstall|--remove|--delete) UNINSTALL=1 ;;
+        -h|--help)
+            cat <<'EOF'
+PQPM UI addon installer
+
+Usage:
+  sudo ./install-ui.sh [version]
+  sudo ./install-ui.sh --from-source [--with-webmin]
+  sudo ./install-ui.sh --uninstall
+
+Options:
+  --from-source   Build pqpm-ui from this git checkout
+  --with-webmin   Also install the Webmin/Virtualmin module
+  --uninstall     Remove pqpm-ui, systemd unit, and Webmin module
+                  (core pqpmd/pqpm are left installed)
+  -h, --help      Show this help
+EOF
+            exit 0
+            ;;
+        -*) error "Unknown flag: $arg" ;;
+        *) VERSION="$arg" ;;
+    esac
+done
+
 if [ "$(id -u)" -ne 0 ]; then
     error "This script must be run as root (use sudo)"
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+webmin_root_dir() {
+    local conf="${WEBMIN_CONFIG:-/etc/webmin}/miniserv.conf"
+    local dir=""
+    if [ -f "$conf" ]; then
+        dir=$(awk -F= '/^root=/ { print $2; exit }' "$conf" | tr -d '\r')
+    fi
+    if [ -n "$dir" ] && [ -d "$dir" ]; then
+        echo "$dir"
+        return 0
+    fi
+    for d in /usr/libexec/webmin /usr/share/webmin /opt/webmin /usr/local/webmin; do
+        if [ -d "$d" ] && { [ -f "$d/miniserv.pl" ] || [ -f "$d/install-module.pl" ]; }; then
+            echo "$d"
+            return 0
+        fi
+    done
+    return 1
+}
+
+grant_webmin_acl() {
+    local acl="${1}/webmin.acl"
+    [ -f "$acl" ] || return 0
+    local tmp
+    tmp=$(mktemp)
+    awk '
+        BEGIN { granted=0 }
+        /^root:/ || /^admin:/ {
+            if ($0 !~ /(^| )pqpm( |$)/) { $0 = $0 " pqpm" }
+            granted=1
+        }
+        { print }
+        END {
+            if (!granted) print "root: pqpm"
+        }
+    ' "$acl" > "$tmp" && mv "$tmp" "$acl"
+}
+
+copy_webmin_module_manual() {
+    local src="$1"
+    local webmin_dir="$2"
+    local webmin_config="$3"
+    info "Copying Webmin module into $webmin_dir/pqpm ..."
+    install -d "$webmin_dir/pqpm/lang" "$webmin_dir/pqpm/images"
+    install -m 0755 "$src"/index.cgi "$src"/action.cgi "$src"/config.cgi "$src"/refresh.cgi "$webmin_dir/pqpm/"
+    install -m 0644 "$src"/pqpm-lib.pl "$src"/module.info "$src"/config "$src"/config.info "$src"/install_check.pl "$webmin_dir/pqpm/"
+    install -m 0644 "$src"/lang/en "$webmin_dir/pqpm/lang/en"
+    if [ -f "$src/images/icon.gif" ]; then
+        install -m 0644 "$src/images/icon.gif" "$webmin_dir/pqpm/images/icon.gif"
+    fi
+    install -d "$webmin_config/pqpm"
+    if [ ! -f "$webmin_config/pqpm/config" ]; then
+        install -m 0644 "$src/config" "$webmin_config/pqpm/config"
+    fi
+    grant_webmin_acl "$webmin_config"
+}
+
+install_webmin_module() {
+    local src="$1"
+    if [ "$WITH_WEBMIN" -ne 1 ]; then
+        return 0
+    fi
+    local webmin_config="${WEBMIN_CONFIG:-/etc/webmin}"
+    local webmin_dir=""
+    webmin_dir=$(webmin_root_dir) || true
+    if [ -z "$webmin_dir" ] || [ ! -d "$webmin_dir" ]; then
+        warn "Webmin not found; skipping --with-webmin. Standalone pqpm-ui is installed."
+        return 0
+    fi
+
+    local pack="$TMPDIR/wbm-pack"
+    rm -rf "$pack"
+    mkdir -p "$pack/pqpm"
+    cp -a "$src"/. "$pack/pqpm/"
+    chmod 0755 "$pack/pqpm/"*.cgi
+    tar -C "$pack" -czf "$TMPDIR/pqpm.wbm.gz" pqpm
+
+    if [ -f "$webmin_dir/install-module.pl" ]; then
+        info "Installing Webmin module via $webmin_dir/install-module.pl ..."
+        if ! perl "$webmin_dir/install-module.pl" --nodeps "$TMPDIR/pqpm.wbm.gz" "$webmin_config"; then
+            warn "install-module.pl failed; falling back to a manual copy"
+            copy_webmin_module_manual "$src" "$webmin_dir" "$webmin_config"
+        fi
+    else
+        copy_webmin_module_manual "$src" "$webmin_dir" "$webmin_config"
+    fi
+
+    rm -f "$webmin_config/module.infos.cache" "$webmin_config/installed.cache" \
+          "$webmin_config/module.infos.cache.json" 2>/dev/null || true
+    info "Webmin module installed in $webmin_dir/pqpm"
+    info "Then: Webmin → Webmin Configuration → Refresh Modules"
+    info "Open: Webmin → Servers → PQPM Process Manager"
+    info "(If pqpm is missing, it appears under Un-used Modules until you Refresh Modules.)"
+}
+
+revoke_webmin_acl() {
+    local acl="${1}/webmin.acl"
+    [ -f "$acl" ] || return 0
+    local tmp
+    tmp=$(mktemp)
+    awk '{
+        gsub(/(^| )pqpm( |$)/, " ");
+        gsub(/  +/, " ");
+        sub(/: +/, ": ");
+        sub(/ +$/, "");
+        print
+    }' "$acl" > "$tmp" && mv "$tmp" "$acl"
+}
+
+uninstall_webmin_module() {
+    local webmin_config="${WEBMIN_CONFIG:-/etc/webmin}"
+    local webmin_dir=""
+    webmin_dir=$(webmin_root_dir) || true
+    if [ -z "$webmin_dir" ]; then
+        return 0
+    fi
+    if [ -d "$webmin_dir/pqpm" ]; then
+        info "Removing Webmin module from $webmin_dir/pqpm ..."
+        rm -rf "$webmin_dir/pqpm"
+    fi
+    if [ -d "$webmin_config/pqpm" ]; then
+        rm -rf "$webmin_config/pqpm"
+    fi
+    revoke_webmin_acl "$webmin_config"
+    rm -f "$webmin_config/module.infos.cache" "$webmin_config/installed.cache" \
+          "$webmin_config/module.infos.cache.json" 2>/dev/null || true
+}
+
+uninstall_ui() {
+    info "Removing PQPM UI addon (core pqpm is kept)..."
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl stop pqpm-ui 2>/dev/null || true
+        systemctl disable pqpm-ui 2>/dev/null || true
+        systemctl daemon-reload 2>/dev/null || true
+    fi
+    rm -f "$UNIT_DST" /usr/lib/systemd/system/pqpm-ui.service
+    rm -f "$INSTALL_DIR/pqpm-ui"
+    uninstall_webmin_module
+    info "UI addon removed."
+    info "Core PQPM (pqpmd / pqpm) was not uninstalled."
+}
+
+if [ "$UNINSTALL" -eq 1 ]; then
+    uninstall_ui
+    exit 0
 fi
 
 command -v pqpm >/dev/null 2>&1 || error "pqpm not found in PATH. Install core PQPM first (install.sh)."
@@ -41,49 +224,6 @@ esac
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 [ "$OS" = "linux" ] || error "PQPM UI only supports Linux (detected: $OS)"
 
-FROM_SOURCE=0
-WITH_WEBMIN=0
-VERSION=""
-for arg in "$@"; do
-    case "$arg" in
-        --from-source) FROM_SOURCE=1 ;;
-        --with-webmin) WITH_WEBMIN=1 ;;
-        -*) error "Unknown flag: $arg" ;;
-        *) VERSION="$arg" ;;
-    esac
-done
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
-
-install_webmin_module() {
-    local src="$1"
-    if [ "$WITH_WEBMIN" -ne 1 ]; then
-        return 0
-    fi
-    local webmin_dir=""
-    if [ -d /usr/share/webmin ]; then
-        webmin_dir=/usr/share/webmin
-    elif [ -d /opt/webmin ]; then
-        webmin_dir=/opt/webmin
-    else
-        warn "Webmin not found; skipping --with-webmin. Standalone pqpm-ui is installed."
-        return 0
-    fi
-    info "Installing optional Webmin module to $webmin_dir/pqpm ..."
-    install -d "$webmin_dir/pqpm/lang"
-    install -m 0755 "$src"/index.cgi "$src"/action.cgi "$src"/config.cgi "$src"/refresh.cgi "$webmin_dir/pqpm/"
-    install -m 0644 "$src"/pqpm-lib.pl "$src"/module.info "$src"/config "$src"/config.info "$webmin_dir/pqpm/"
-    install -m 0644 "$src"/lang/en "$webmin_dir/pqpm/lang/en"
-    if [ -d /etc/webmin ]; then
-        install -d /etc/webmin/pqpm
-        if [ ! -f /etc/webmin/pqpm/config ]; then
-            install -m 0644 "$src"/config /etc/webmin/pqpm/config
-        fi
-    fi
-    info "Webmin module installed. Enable it under Webmin → Un-used Modules."
-}
 
 install_unit() {
     local src="$1"
